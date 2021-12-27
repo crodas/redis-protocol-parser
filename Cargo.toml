@@ -1,0 +1,12 @@
+[package]
+name = "redis-zero-protocol-parser"
+repository = "https://github.com/crodas/redis-protocol-parser"
+description = "Redis Protocol Parser. A zero copy stream-friendly parser"
+license = "BSD-3-Clause"
+version = "0.1.0"
+authors = ["Cesar Rodas <cesar@rodasm.com.py>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
