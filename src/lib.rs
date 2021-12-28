@@ -155,11 +155,13 @@ fn parse_float(bytes: &[u8]) -> Result<(&[u8], Value), Error> {
 }
 
 fn parse_blob(bytes: &[u8]) -> Result<(&[u8], Value), Error> {
-    let (bytes, len) = read_line_number!(bytes, i32);
+    let (bytes, len) = read_line_number!(bytes, i64);
 
     if len <= 0 {
         return ret!(bytes, Value::Null);
     }
+
+    let len = len.try_into().expect("Positive number");
 
     let (bytes, blob) = read_len!(bytes, len);
     let bytes = assert_nl!(bytes);

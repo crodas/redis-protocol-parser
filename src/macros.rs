@@ -16,22 +16,20 @@ macro_rules! next {
 
 macro_rules! read_len {
     ($bytes:ident, $len:ident) => {{
-        let len: usize = $len.try_into().unwrap();
-
-        if ($bytes.len() < len) {
+        if $bytes.len() < $len {
             return Err(Error::Partial);
         }
 
-        (&$bytes[len..], &$bytes[0..len])
+        (&$bytes[$len..], &$bytes[0..$len])
     }};
 }
 
 macro_rules! assert_nl {
     ($bytes:ident) => {{
-        if ($bytes.len() < 2) {
+        if $bytes.len() < 2 {
             return Err(Error::Partial);
         }
-        if ($bytes[0] != b'\r' || $bytes[1] != b'\n') {
+        if $bytes[0] != b'\r' || $bytes[1] != b'\n' {
             return Err(Error::NewLine);
         }
         &$bytes[2..]
@@ -43,11 +41,11 @@ macro_rules! read_until {
         let len = $bytes.len();
         let mut i = 0;
         loop {
-            if (i >= len) {
+            if i >= len {
                 return Err(Error::Partial);
             }
 
-            if ($bytes[i] == $next) {
+            if $bytes[i] == $next {
                 break;
             }
             i += 1;
@@ -61,7 +59,7 @@ macro_rules! read_line {
         let ($bytes, prev) = read_until!($bytes, b'\r');
         let ($bytes, next) = next!($bytes);
 
-        if (next != b'\n') {
+        if next != b'\n' {
             return Err(Error::NewLine);
         }
 
