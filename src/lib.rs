@@ -8,8 +8,7 @@
 #[macro_use]
 mod macros;
 
-use std::cmp::Ordering;
-use std::convert::TryInto;
+use std::{borrow::Cow, cmp::Ordering, convert::TryInto};
 
 /// Redis Value.
 #[derive(Debug, PartialEq, Clone)]
@@ -19,9 +18,9 @@ pub enum Value<'a> {
     /// Binary data
     Blob(&'a [u8]),
     /// String. New lines are not allowed
-    String(&'a str),
+    String(Cow<'a, str>),
     /// Error
-    Error(&'a str, &'a str),
+    Error(Cow<'a, str>, Cow<'a, str>),
     /// Integer
     Integer(i64),
     /// Boolean
@@ -119,14 +118,14 @@ pub fn parse(bytes: &[u8]) -> Result<(&[u8], Value), Error> {
 fn parse_error(bytes: &[u8]) -> Result<(&[u8], Value), Error> {
     let (bytes, err_type) = read_until!(bytes, b' ');
     let (bytes, str) = read_line!(bytes);
-    let err_type = unsafe { std::str::from_utf8_unchecked(err_type) };
-    let str = unsafe { std::str::from_utf8_unchecked(str) };
+    let err_type = String::from_utf8_lossy(err_type);
+    let str = String::from_utf8_lossy(str);
     ret!(bytes, Value::Error(err_type, str))
 }
 
 fn parse_str(bytes: &[u8]) -> Result<(&[u8], Value), Error> {
     let (bytes, str) = read_line!(bytes);
-    let str = unsafe { std::str::from_utf8_unchecked(str) };
+    let str = String::from_utf8_lossy(str);
     ret!(bytes, Value::String(str))
 }
 
@@ -220,12 +219,7 @@ mod test {
         let r = parse(d);
         assert!(r.is_ok());
 
-        let data = match r.unwrap().1 {
-            Value::Blob(x) => unsafe { std::str::from_utf8_unchecked(x) },
-            _ => "",
-        };
-
-        assert_eq!(data, "foobar");
+        assert_eq!(Value::Blob(b"foobar"), r.unwrap().1);
     }
 
     #[test]
@@ -237,12 +231,7 @@ mod test {
 
         let (buf, data) = r.unwrap();
 
-        let data = match data {
-            Value::Blob(x) => unsafe { std::str::from_utf8_unchecked(x) },
-            _ => "",
-        };
-
-        assert_eq!(data, "foobar");
+        assert_eq!(Value::Blob(b"foobar"), data);
         assert_eq!(b"$6\r\nfoobar\r\n", buf);
     }
 

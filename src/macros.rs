@@ -5,10 +5,9 @@ macro_rules! ret {
 }
 macro_rules! next {
     ($bytes:ident) => {{
-        let byte = if $bytes.len() > 0 {
-            unsafe { *$bytes.get_unchecked(0) }
-        } else {
-            return Err(Error::Partial);
+        let byte = match $bytes.get(0) {
+            Some(val) => *val,
+            _ => return Err(Error::Partial),
         };
         (&$bytes[1..], byte)
     }};
@@ -70,7 +69,7 @@ macro_rules! read_line {
 macro_rules! read_line_number {
     ($bytes:ident, $type:ident) => {{
         let ($bytes, n) = read_line!($bytes);
-        let n = unsafe { std::str::from_utf8_unchecked(n) };
+        let n = String::from_utf8_lossy(n);
         let n = match n.parse::<$type>() {
             Ok(x) => x,
             _ => return Err(Error::InvalidNumber),
