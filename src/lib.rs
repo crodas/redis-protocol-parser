@@ -8,6 +8,7 @@
 #[macro_use]
 mod macros;
 
+use std::cmp::Ordering;
 use std::convert::TryInto;
 
 /// Redis Value.
@@ -157,9 +158,11 @@ fn parse_float(bytes: &[u8]) -> Result<(&[u8], Value), Error> {
 fn parse_blob(bytes: &[u8]) -> Result<(&[u8], Value), Error> {
     let (bytes, len) = read_line_number!(bytes, i64);
 
-    if len <= 0 {
-        return ret!(bytes, Value::Null);
-    }
+    match len.cmp(&0) {
+        Ordering::Less => return ret!(bytes, Value::Null),
+        Ordering::Equal => return ret!(bytes, Value::Blob(b"")),
+        _ => {}
+    };
 
     let len = len.try_into().expect("Positive number");
 
@@ -384,5 +387,13 @@ mod test {
 
         assert_eq!("ERR", x.0);
         assert_eq!("this is the error description", x.1);
+    }
+
+    #[test]
+    fn test_empty_string() {
+        let data = b"*2\r\n$0\r\n$0\r\n";
+        let (_, data) = parse_server(data).unwrap();
+
+        assert_eq!(vec![b"", b""], data);
     }
 }
