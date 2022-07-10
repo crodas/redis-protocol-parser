@@ -10,6 +10,11 @@ mod macros;
 
 use std::{borrow::Cow, cmp::Ordering, convert::TryInto};
 
+/// parse_server response. It is a tuple with two elements. The first element is
+/// the stream of bytes to be processed, and the second element is the vector of
+/// parsed arguments.
+pub type ServerResponse<'a> = (&'a [u8], Vec<Cow<'a, [u8]>>);
+
 /// Redis Value.
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value<'a> {
@@ -60,18 +65,98 @@ pub enum Error {
 /// top level, redis expects an array of blobs.
 ///
 /// The first value is returned along side with the unconsumed stream of bytes.
-pub fn parse_server(bytes: &[u8]) -> Result<(&[u8], Vec<&[u8]>), Error> {
-    let (bytes, byte) = next!(bytes);
+pub fn parse_server(bytes: &[u8]) -> Result<ServerResponse<'_>, Error> {
+    let (new_bytes, byte) = next!(bytes);
     match byte {
-        b'*' => parse_server_array(bytes),
+        b'*' => parse_server_array(new_bytes),
+        b'a'..=b'z' | b'A'..=b'Z' => parse_inline_proto(bytes),
         _ => Err(Error::Protocol(b'*', byte)),
     }
+}
+
+fn parse_inline_proto(bytes: &[u8]) -> Result<ServerResponse, Error> {
+    let mut items = vec![];
+    let len = bytes.len();
+    let mut i = 0;
+    let mut start = 0;
+    loop {
+        if i >= len {
+            return Err(Error::Partial);
+        }
+        match bytes[i] {
+            b' ' | b'\t' => {
+                if start != i {
+                    items.push(Cow::from(&bytes[start..i]));
+                }
+                start = i + 1;
+            }
+            b'"' | b'\'' => {
+                let stop_at = bytes[i];
+                let start_str = i + 1;
+                let mut has_escape = false;
+                i += 1;
+                loop {
+                    i += 1;
+                    if i >= len {
+                        return Err(Error::Partial);
+                    }
+                    if bytes[i] == b'\\' {
+                        has_escape = true;
+                        i += 1;
+                    } else if bytes[i] == stop_at {
+                        let mut v = Cow::from(&bytes[start_str..i]);
+                        if has_escape {
+                            let len = v.len();
+                            let mut old_i = 0;
+                            let mut new_i = 0;
+                            let v = v.to_mut();
+                            loop {
+                                if old_i >= len {
+                                    v.resize(new_i, 0);
+                                    break;
+                                }
+                                if v[old_i] == b'\\' {
+                                    match v.get(old_i+1) {
+                                        Some(_) => v[new_i] = v[old_i+1],
+                                        None => v[new_i] = b'\\',
+                                    }
+                                    old_i += 2;
+                                    new_i += 1;
+                                    continue;
+                                }
+                                if old_i != new_i {
+                                    v[new_i] = v[old_i];
+                                }
+                                new_i += 1;
+                                old_i += 1;
+                            }
+                        }
+                        items.push(v);
+                        break;
+                    }
+                }
+                start = i + 1;
+            }
+            b'\r' => {
+                if bytes.get(i + 1) == Some(&b'\n') {
+                    if start != i {
+                        items.push(Cow::from(&bytes[start..i]));
+                    }
+                    i += 1;
+                    break;
+                }
+            }
+            _ => {}
+        };
+        i += 1;
+    }
+    Ok((&bytes[i..], items))
 }
 
 /// Parses an array from an steam of bytes
 ///
 /// The first value is returned along side with the unconsumed stream of bytes.
-fn parse_server_array(bytes: &[u8]) -> Result<(&[u8], Vec<&[u8]>), Error> {
+fn parse_server_array(bytes: &[u8]) -> Result<ServerResponse, Error> {
     let (bytes, len) = read_line_number!(bytes, i32);
     if len <= 0 {
         return Err(Error::Protocol(b'x', b'y'));
@@ -88,7 +173,7 @@ fn parse_server_array(bytes: &[u8]) -> Result<(&[u8], Vec<&[u8]>), Error> {
         }?;
         bytes = r.0;
         v.push(match r.1 {
-            Value::Blob(x) => Ok(x),
+            Value::Blob(x) => Ok(Cow::from(x)),
             _ => Err(Error::Protocol(b'x', b'y')),
         }?);
     }
@@ -383,6 +468,39 @@ mod test {
         let data = b"*2\r\n$0\r\n$0\r\n";
         let (_, data) = parse_server(data).unwrap();
 
-        assert_eq!(vec![b"", b""], data);
+        assert_eq!(
+            vec![b"", b""],
+            data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+    }
+
+    #[test]
+    fn test_parse_non_binary_protocol() {
+        let data = b"PING\r\n";
+        let (_, data) = parse_server(data).unwrap();
+        assert_eq!(
+            vec![b"PING"],
+            data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+    }
+
+    #[test]
+    fn test_parse_non_binary_protocol_2() {
+        let data = b"PING\t\tfoox   barx\r\n";
+        let (_, data) = parse_server(data).unwrap();
+        assert_eq!(
+            vec![b"PING", b"foox", b"barx"],
+            data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+    }
+
+    #[test]
+    fn test_parse_non_binary_protocol_3() {
+        let data = b"PINGPONGXX 'test  test' \"test\\\" test\"PINGPONGXX\r\n";
+        let (_, data) = parse_server(data).unwrap();
+        assert_eq!(
+            vec![b"PINGPONGXX", b"test  test", b"test\" test", b"PINGPONGXX"],
+            data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
     }
 }
