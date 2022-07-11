@@ -69,7 +69,7 @@ pub fn parse_server(bytes: &[u8]) -> Result<ServerResponse<'_>, Error> {
     let (new_bytes, byte) = next!(bytes);
     match byte {
         b'*' => parse_server_array(new_bytes),
-        b'a'..=b'z' | b'A'..=b'Z' => parse_inline_proto(bytes),
+        b'a'..=b'z' | b'A'..=b'Z' | b'\r' | b' ' | b'\t'  => parse_inline_proto(bytes),
         _ => Err(Error::Protocol(b'*', byte)),
     }
 }
@@ -479,7 +479,7 @@ mod test {
     }
 
     #[test]
-    fn test_parse_non_binary_protocol() {
+    fn test_parse_inline_protocol() {
         let data = b"PING\r\n";
         let (bytes_to_consume_next, data) = parse_server(data).unwrap();
         assert_eq!(
@@ -493,7 +493,7 @@ mod test {
     }
 
     #[test]
-    fn test_parse_non_binary_protocol_2() {
+    fn test_parse_inline_protocol_2() {
         let data = b"PING\t\tfoox   barx\r\n";
         let (bytes_to_consume_next, data) = parse_server(data).unwrap();
         assert_eq!(
@@ -507,7 +507,7 @@ mod test {
     }
 
     #[test]
-    fn test_parse_non_binary_protocol_3() {
+    fn test_parse_inline_protocol_3() {
         let data = b"PINGPONGXX 'test  test' \"test\\\" test\"PINGPONGXX\r\n";
         let (bytes_to_consume_next, data) = parse_server(data).unwrap();
         assert_eq!(
@@ -519,4 +519,49 @@ mod test {
             bytes_to_consume_next
         );
     }
+
+    #[test]
+    fn test_parse_inline_protocol_4() {
+        let data = b"PING\r\n\r\n\r\nPING\r\n";
+        let (bytes_to_consume_next, data) = parse_server(data).unwrap();
+        assert_eq!(
+            vec![b"PING"],
+            data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+        let (bytes_to_consume_next, data) = parse_server(bytes_to_consume_next).unwrap();
+        assert_eq!(
+            0,
+            data.len(),
+        );
+        let (bytes_to_consume_next, data) = parse_server(bytes_to_consume_next).unwrap();
+        assert_eq!(
+            0,
+            data.len(),
+        );
+        let (bytes_to_consume_next, data) = parse_server(bytes_to_consume_next).unwrap();
+        assert_eq!(
+            vec![b"PING"],
+            data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+        assert_eq!(
+            b"",
+            bytes_to_consume_next
+        );
+    }
+
+    #[test]
+    fn test_parse_inline_protocol_5() {
+        let data = b"   PING\r\n";
+        let (bytes_to_consume_next, data) = parse_server(data).unwrap();
+        assert_eq!(
+            vec![b"PING"],
+            data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+        assert_eq!(
+            b"",
+            bytes_to_consume_next
+        );
+    }
+
+
 }
