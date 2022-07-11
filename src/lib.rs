@@ -142,7 +142,7 @@ fn parse_inline_proto(bytes: &[u8]) -> Result<ServerResponse, Error> {
                     if start != i {
                         items.push(Cow::from(&bytes[start..i]));
                     }
-                    i += 1;
+                    i += 2;
                     break;
                 }
             }
@@ -466,41 +466,57 @@ mod test {
     #[test]
     fn test_empty_string() {
         let data = b"*2\r\n$0\r\n$0\r\n";
-        let (_, data) = parse_server(data).unwrap();
+        let (bytes_to_consume_next, data) = parse_server(data).unwrap();
 
         assert_eq!(
             vec![b"", b""],
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+        assert_eq!(
+            b"",
+            bytes_to_consume_next
         );
     }
 
     #[test]
     fn test_parse_non_binary_protocol() {
         let data = b"PING\r\n";
-        let (_, data) = parse_server(data).unwrap();
+        let (bytes_to_consume_next, data) = parse_server(data).unwrap();
         assert_eq!(
             vec![b"PING"],
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+        assert_eq!(
+            b"",
+            bytes_to_consume_next
         );
     }
 
     #[test]
     fn test_parse_non_binary_protocol_2() {
         let data = b"PING\t\tfoox   barx\r\n";
-        let (_, data) = parse_server(data).unwrap();
+        let (bytes_to_consume_next, data) = parse_server(data).unwrap();
         assert_eq!(
             vec![b"PING", b"foox", b"barx"],
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+        assert_eq!(
+            b"",
+            bytes_to_consume_next
         );
     }
 
     #[test]
     fn test_parse_non_binary_protocol_3() {
         let data = b"PINGPONGXX 'test  test' \"test\\\" test\"PINGPONGXX\r\n";
-        let (_, data) = parse_server(data).unwrap();
+        let (bytes_to_consume_next, data) = parse_server(data).unwrap();
         assert_eq!(
             vec![b"PINGPONGXX", b"test  test", b"test\" test", b"PINGPONGXX"],
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+        assert_eq!(
+            b"",
+            bytes_to_consume_next
         );
     }
 }
