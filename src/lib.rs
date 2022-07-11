@@ -69,7 +69,7 @@ pub fn parse_server(bytes: &[u8]) -> Result<ServerResponse<'_>, Error> {
     let (new_bytes, byte) = next!(bytes);
     match byte {
         b'*' => parse_server_array(new_bytes),
-        b'a'..=b'z' | b'A'..=b'Z' | b'\r' | b' ' | b'\t'  => parse_inline_proto(bytes),
+        b'a'..=b'z' | b'A'..=b'Z' | b'\r' | b' ' | b'\t' | b'\n' => parse_inline_proto(bytes),
         _ => Err(Error::Protocol(b'*', byte)),
     }
 }
@@ -116,8 +116,8 @@ fn parse_inline_proto(bytes: &[u8]) -> Result<ServerResponse, Error> {
                                     break;
                                 }
                                 if v[old_i] == b'\\' {
-                                    match v.get(old_i+1) {
-                                        Some(_) => v[new_i] = v[old_i+1],
+                                    match v.get(old_i + 1) {
+                                        Some(_) => v[new_i] = v[old_i + 1],
                                         None => v[new_i] = b'\\',
                                     }
                                     old_i += 2;
@@ -136,6 +136,13 @@ fn parse_inline_proto(bytes: &[u8]) -> Result<ServerResponse, Error> {
                     }
                 }
                 start = i + 1;
+            }
+            b'\n' => {
+                if start != i {
+                    items.push(Cow::from(&bytes[start..i]));
+                }
+                i += 1;
+                break;
             }
             b'\r' => {
                 if bytes.get(i + 1) == Some(&b'\n') {
@@ -472,10 +479,7 @@ mod test {
             vec![b"", b""],
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
         );
-        assert_eq!(
-            b"",
-            bytes_to_consume_next
-        );
+        assert_eq!(b"", bytes_to_consume_next);
     }
 
     #[test]
@@ -486,10 +490,7 @@ mod test {
             vec![b"PING"],
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
         );
-        assert_eq!(
-            b"",
-            bytes_to_consume_next
-        );
+        assert_eq!(b"", bytes_to_consume_next);
     }
 
     #[test]
@@ -500,10 +501,7 @@ mod test {
             vec![b"PING", b"foox", b"barx"],
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
         );
-        assert_eq!(
-            b"",
-            bytes_to_consume_next
-        );
+        assert_eq!(b"", bytes_to_consume_next);
     }
 
     #[test]
@@ -514,10 +512,7 @@ mod test {
             vec![b"PINGPONGXX", b"test  test", b"test\" test", b"PINGPONGXX"],
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
         );
-        assert_eq!(
-            b"",
-            bytes_to_consume_next
-        );
+        assert_eq!(b"", bytes_to_consume_next);
     }
 
     #[test]
@@ -529,24 +524,15 @@ mod test {
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
         );
         let (bytes_to_consume_next, data) = parse_server(bytes_to_consume_next).unwrap();
-        assert_eq!(
-            0,
-            data.len(),
-        );
+        assert_eq!(0, data.len(),);
         let (bytes_to_consume_next, data) = parse_server(bytes_to_consume_next).unwrap();
-        assert_eq!(
-            0,
-            data.len(),
-        );
+        assert_eq!(0, data.len(),);
         let (bytes_to_consume_next, data) = parse_server(bytes_to_consume_next).unwrap();
         assert_eq!(
             vec![b"PING"],
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
         );
-        assert_eq!(
-            b"",
-            bytes_to_consume_next
-        );
+        assert_eq!(b"", bytes_to_consume_next);
     }
 
     #[test]
@@ -557,11 +543,26 @@ mod test {
             vec![b"PING"],
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
         );
-        assert_eq!(
-            b"",
-            bytes_to_consume_next
-        );
+        assert_eq!(b"", bytes_to_consume_next);
     }
 
-
+    #[test]
+    fn test_parse_inline_protocol_6() {
+        let data = b"PING\r\n\n\nPING\r\n";
+        let (bytes_to_consume_next, data) = parse_server(data).unwrap();
+        assert_eq!(
+            vec![b"PING"],
+            data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+        let (bytes_to_consume_next, data) = parse_server(bytes_to_consume_next).unwrap();
+        assert_eq!(0, data.len(),);
+        let (bytes_to_consume_next, data) = parse_server(bytes_to_consume_next).unwrap();
+        assert_eq!(0, data.len(),);
+        let (bytes_to_consume_next, data) = parse_server(bytes_to_consume_next).unwrap();
+        assert_eq!(
+            vec![b"PING"],
+            data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
+        );
+        assert_eq!(b"", bytes_to_consume_next);
+    }
 }
