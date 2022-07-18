@@ -250,8 +250,14 @@ fn parse_blob(bytes: &[u8]) -> Result<(&[u8], Value), Error> {
     let (bytes, len) = read_line_number!(bytes, i64);
 
     match len.cmp(&0) {
-        Ordering::Less => return ret!(bytes, Value::Null),
-        Ordering::Equal => return ret!(bytes, Value::Blob(b"")),
+        Ordering::Less => {
+            let bytes = assert_nl!(bytes);
+            return ret!(bytes, Value::Null);
+        }
+        Ordering::Equal => {
+            let bytes = assert_nl!(bytes);
+            return ret!(bytes, Value::Blob(b""));
+        }
         _ => {}
     };
 
@@ -472,7 +478,7 @@ mod test {
 
     #[test]
     fn test_empty_string() {
-        let data = b"*2\r\n$0\r\n$0\r\n";
+        let data = b"*2\r\n$0\r\n\r\n$0\r\n\r\n";
         let (bytes_to_consume_next, data) = parse_server(data).unwrap();
 
         assert_eq!(
@@ -563,6 +569,13 @@ mod test {
             vec![b"PING"],
             data.iter().map(|r| r.as_ref()).collect::<Vec<&[u8]>>()
         );
+        assert_eq!(b"", bytes_to_consume_next);
+    }
+
+    #[test]
+    fn test_parse_zero() {
+        let data = b"*5\r\n$4\r\nhset\r\n$6\r\nfoobar\r\n$1\r\n1\r\n$0\r\n\r\n$0\r\n\r\n";
+        let (bytes_to_consume_next, _data) = parse_server(data).unwrap();
         assert_eq!(b"", bytes_to_consume_next);
     }
 }
